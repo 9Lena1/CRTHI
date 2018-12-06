@@ -1,4 +1,5 @@
 import csv
+import datetime
 
 import psycopg2
 
@@ -15,11 +16,59 @@ def write_csv_adm_JOIN_pat(cur):
     except (Exception, psycopg2.Error) as error:
         print ("Error while fetching data from PostgreSQL", error)
 
+#TODO
+def calc_age(cur):
+    # Age = dob - day of first admission
+    try:
+        query1 = "SELECT hadm_id, subject_id, admittime FROM mimiciiidev.admissions "
+        cur.execute(query1)
+        records_adm = cur.fetchall()
+        records_adm_one = cur.fetchone()
+        query2 = "SELECT subject_id, dob FROM mimiciiidev.patients"
+        cur.execute(query2)
+        records_pat = cur.fetchall()
+        # Create csv file with patient ids and age
+        with open('age.csv', 'w') as csv_pat_id:
+            for row2 in records_pat:
+                subject_id_pat = str(row2[0])
+                dob = str(row2[1])
+                first_admission = str(records_adm_one[2])
+                for row1 in records_adm:
+                    subject_id_adm = str(row1[1])
+                    if (subject_id_pat == subject_id_adm):
+                        adm_time = str(row1[2])
+                        if (adm_time < first_admission):
+                            first_admission = adm_time
+                        print(adm_time)
+                        #print(list_adm_time)
+                print("First Admission: " + first_admission)
+                age = dob - first_admission
+                csv.writer(csv_pat_id).writerow(subject_id_pat, age)
+
+        with open('admissionsLEFTJOINpatients.csv', 'r') as csv_in, open('age.csv', 'r') as csv_age, open('patientAge.csv', 'w') as csv_out:
+            for rowcsv in csv.reader(csv_in):
+                hadm_id_in= rowcsv[0]
+                for rows_adm in records_adm:
+                    hadm_id = records_adm[0]
+                    if (hadm_id_in == rows_adm):
+                        subject_id = records_adm[1]
+                        for rows_age in csv_age:
+                            subjec_id_age = rows_age[1]
+                            if (subject_id == subjec_id_age):
+                                pat_age = rows_age[0]
+                                rowcsv[3] = pat_age
+                csv.writer(csv_out).writerow(rowcsv)
+
+    except (Exception, psycopg2.Error) as error:
+        print ("Error while fetching data from PostgreSQL", error)
+
 def append_cols():
     with open('admissionsLEFTJOINpatients.csv', 'r') as csv_in, open('appendedCols.csv', 'w') as csv_out:
         for row in csv.reader(csv_in):
             # 18 Procedures, 1 class label
-            for x in range(19):
+            # 37 LOINC parent groups
+            # 93 medication groups
+            for x in range(139):
                 row.insert(4 + x, '0')
             csv.writer(csv_out).writerow(row)
 
@@ -53,7 +102,7 @@ def map_add_procedures_icd(cur):
         with open('appendedRows.csv', 'r') as csv_in, open('procedures.csv', 'w') as csv_out:
             for rowcsv in csv.reader(csv_in):
                 hadm_id_adm = str(rowcsv[0])
-                print("Hadm_id_admissions: ", hadm_id_adm)
+                #print("Hadm_id_admissions: ", hadm_id_adm)
 
                 for row in records_prcd_icd:
                     # print("Hadm_id: ", row[0], "Procedure_icd: ", row[1])
@@ -100,7 +149,7 @@ def add_class_labels_diagnoses(cur):
                     hadm_id_diag = str(row[0])
                     if (hadm_id_adm == hadm_id_diag):
                         #print(str(row[1]))
-                        if (str(row[1]) == '29281' or str(row[1]) == '6930' or
+                        if (str(row[1]) == 'E9308' or str(row[1]) == 'E9300' or
                                 str(row[1]) == 'E9320' or str(row[1]) == 'E9331' or str(row[1]) == 'E9352'):
                             #print('Records diagnosis: ' + str(records_diag_icd[1]))
                             rowcsv[22] = '1'
@@ -108,33 +157,72 @@ def add_class_labels_diagnoses(cur):
     except (Exception, psycopg2.Error) as error:
         print("Error while connecting to PostgreSQL", error)
 
-# def map_add_labEvents_LOINC(cur):
-#     # JOIN labevents & d_labitems ON itemid:
+def map_add_labEvents_LOINC(cur):
+    dict_icd9_cat = {'LG100-4': '0', 'LG103-8': '1', 'LG105-3': '2', 'LG106-1': '3', 'LG27-5': '4', 'LG41751-5': '5',
+                     'LG41762-2': '6', 'LG41808-3': '7', 'LG41809-1': '8', 'LG41811-7': '9', 'LG41812-5': '10',
+                     'LG41813-3': '11', 'LG41814-1': '12', 'LG41816-6': '13', 'LG41817-4': '14', 'LG41818-2': '15',
+                     'LG41820-8': '16', 'LG41821-6': '17', 'LG41822-4': '18', 'LG41855-4': '19', 'LG47-3': '20',
+                     'LG50067-4': '21', 'LG55-6': '22', 'LG66-3': '23', 'LG68-9': '24', 'LG70-5': '25', 'LG74-7': '26',
+                     'LG78-8': '27', 'LG80-4': '28', 'LG85-3': '29', 'LG88-7': '30', 'LG89-5': '31', 'LG90-3': '32',
+                     'LG92-9': '33', 'LG96-0': '34', 'LG97-8': '35', 'LG99-4': '36'}
+    try:
+        # # JOIN labevents & d_labitems ON itemid:
+        # query_JOIN_labEvents_labItems = "SELECT  labevents.hadm_id, d_labitems.loinc_code FROM mimiciiidev.labevents LEFT JOIN mimiciiidev.d_labitems ON labevents.itemid = d_labitems.itemid;"
+        # cur.execute(query_JOIN_labEvents_labItems)
+        # records_loinc_codes = cur.fetchall()
+        # # Join group_loinc_terms and group_loinc on groupId:
+        # query_select_groupIds_loinc = "SELECT group_loinc.parentGroupId, group_loinc_terms.loincNumber FROM mimiciiidev.group_loinc_terms JOIN mimiciiidev.group_loinc ON group_loinc_terms.groupId = group_loinc.groupId;"
+        # cur.execute(query_select_groupIds_loinc)
+        # records_groupIds = cur.fetchall()
+        query = "SELECT  labevents.hadm_id, group_loinc.parentGroupId  \
+                    FROM mimiciiidev.labevents INNER JOIN mimiciiidev.d_labitems ON labevents.itemid = d_labitems.itemid \
+                    INNER JOIN mimiciiidev.group_loinc_terms ON group_loinc_terms.loincnumber = d_labitems.loinc_code \
+                    INNER JOIN mimiciiidev.group_loinc ON group_loinc.groupId =  group_loinc_terms.groupId;"
+        cur.execute(query)
+        records = cur.fetchall()
 
-      # Select loinc_codes:
-#     query_selectAll_labEvenmtsLoinc = "select hadm_id, loinc_code from mimiciiidev.;"
-#     cur.execute(query_selectAll_labEvenmtsLoinc)
-#     records_diag_icd = cur.fetchall()
-#     query_select
-#     cur.execute(query_selectAll_diagnosesicds)
-#     records_diag_icd = cur.fetchall()
-#     query_seelct
-#     cur.execute(query_selectAll_diagnosesicds)
-#     records_diag_icd = cur.fetchall()
-#     try:
-#         with open('classLabelsDiagnoses.csv', 'r') as csv_in, open('prescriptions.csv', 'w') as csv_out:
-#             for rowcsv in csv.reader(csv_in):
-#                 # Add rows!!! --> Should be done in first function append_rows() later on!!!
-#                 # 22 LOINC parent groups
-#                 for x in range(22):
-#                     rowcsv.insert(23 + x, '0')
-#                 csv.writer(csv_out).writerow(rowcsv)
-#
-#                 hadm_id_adm = str(rowcsv[0])
-#
-#
-#     except (Exception, psycopg2.Error) as error:
-#         print("Error while connecting to PostgreSQL", error)
+        # with open('classLabelsDiagnoses.csv', 'r') as csv_in, open('labEvents.csv', 'w') as csv_out:
+        #     for rowcsv in csv.reader(csv_in):
+        #         # Add rows!!! --> Should be done in first function append_rows() later on!!!
+        #         # 37 LOINC parent groups
+        #         for x in range(37):
+        #             rowcsv.insert(23 + x, '0')
+        #         csv.writer(csv_out).writerow(rowcsv)
+        #         hadm_id = str(rowcsv[0])
+        #         for rowlabEv in records_loinc_codes:
+        #             hadm_id_labEv = str(rowlabEv[0])
+        #             if (hadm_id == hadm_id_labEv):
+        #                 loinc_labEv = str(rowlabEv[1])
+        #                 for rowGroup in records_groupIds:
+        #                     loinc = str(rowGroup[1])
+        #                     if (loinc_labEv == loinc):
+        #                         rowcsv[23 + int(dict_icd9_cat[str(rowGroup[0])])] = '1'
+        #         csv.writer(csv_out).writerow(rowcsv)
+        with open('classLabelsDiagnoses.csv', 'r') as csv_in, open('labEvents.csv', 'w') as csv_out:
+            i = 0
+            for rowcsv in csv.reader(csv_in):
+                # Add rows!!! --> Should be done in first function append_rows() later on!!!
+                # 37 LOINC parent groups
+                for x in range(37):
+                    rowcsv.insert(23 + x, '0')
+                csv.writer(csv_out).writerow(rowcsv)
+
+                hadm_id = str(rowcsv[0])
+                for rowlabEv in records:
+                    hadm_id_labEv = str(rowlabEv[0])
+                    if (hadm_id == hadm_id_labEv):
+                        parent_group = str(rowlabEv[1])
+                        rowcsv[23 + int(dict_icd9_cat[parent_group])] = '1'
+                csv.writer(csv_out).writerow(rowcsv)
+                i = i + 1
+                print(i)
+    except (Exception, psycopg2.Error) as error:
+        print("Error while connecting to PostgreSQL", error)
+
+#TODO
+# 93 medication groups (ATC)
+def mapping_prescriptions_ATC(cur):
+    x=1
 
 # def mapping_diagnoses_icd(cur):
 #     try:
@@ -173,19 +261,12 @@ def main():
     # and add category (alter 0 to 1) if procedure within category has been done during an admission:
     #map_add_procedures_icd(cursor)
     # Add class labels (0: no ADE, 1: one or more ADE(s) during admission):
-    add_class_labels_diagnoses(cursor)
+    #add_class_labels_diagnoses(cursor)
     # Group labevents LOINC codes into parent groups
     # and add group if event within group occured during an admission:
-    #map_add_prescription_LOINC(cursor)
-
-
-    ## Alter Database:
-    # Procedures_ICD - Grouping of Procedures ICD9 Codes
-    #mapping_procedures_icd(cursor)
-    # Diagnoses_ICD - Grouping of Diagnoses ICD9 Codes
-    #mapping_diagnoses_icd(cursor)
-
-
+    #calc_age(cursor)
+    map_add_labEvents_LOINC(cursor)
+    #mapping_prescriptions_ATC(cursor)
 
     ## Close database connection:
     if (connection):
