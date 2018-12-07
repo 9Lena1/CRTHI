@@ -2,6 +2,7 @@ import csv
 import datetime
 
 import psycopg2
+from psycopg2.sql import NULL
 
 
 def write_csv_adm_JOIN_pat(cur):
@@ -20,44 +21,97 @@ def write_csv_adm_JOIN_pat(cur):
 def calc_age(cur):
     # Age = dob - day of first admission
     try:
-        query1 = "SELECT hadm_id, subject_id, admittime FROM mimiciiidev.admissions "
+        query1 = "SELECT hadm_id, subject_id, admittime FROM mimiciiidev.admissions;"
         cur.execute(query1)
         records_adm = cur.fetchall()
-        records_adm_one = cur.fetchone()
-        query2 = "SELECT subject_id, dob FROM mimiciiidev.patients"
+        query2 = "SELECT DISTINCT patients.subject_id, patients.dob FROM mimiciiidev.patients;"
         cur.execute(query2)
         records_pat = cur.fetchall()
-        # Create csv file with patient ids and age
-        with open('age.csv', 'w') as csv_pat_id:
-            for row2 in records_pat:
-                subject_id_pat = str(row2[0])
-                dob = str(row2[1])
-                first_admission = str(records_adm_one[2])
-                for row1 in records_adm:
-                    subject_id_adm = str(row1[1])
-                    if (subject_id_pat == subject_id_adm):
-                        adm_time = str(row1[2])
-                        if (adm_time < first_admission):
-                            first_admission = adm_time
-                        print(adm_time)
-                        #print(list_adm_time)
-                print("First Admission: " + first_admission)
-                age = dob - first_admission
-                csv.writer(csv_pat_id).writerow(subject_id_pat, age)
-
+        #Create csv file with patient ids and age
+        # with open('age.csv', 'w') as csv_pat_age:
+        #     for row_pat in records_pat:
+        #         subject_id_pat = str(row_pat[0])
+        #         #print(subject_id_pat)
+        #         dob = row_pat[1]
+        #         first_admission = NULL
+        #         for row_adm in records_adm:
+        #             print(row_adm)
+        #             subject_id_adm = str(row_adm[1])
+        #             if (subject_id_pat == subject_id_adm):
+        #                 adm_time = row_adm[2]
+        #                 if (first_admission == NULL):
+        #                     first_admission = adm_time
+        #                 elif (adm_time < first_admission):
+        #                     first_admission = adm_time
+        #                #print(adm_time)
+        #         #print(first_admission)
+        #         age_diff = (first_admission - dob)
+        #         age = int(age_diff.days/356)
+        #         csv.writer(csv_pat_age).writerow((subject_id_pat, age))
+        #print("entering section 2")
+        # Write age
         with open('admissionsLEFTJOINpatients.csv', 'r') as csv_in, open('age.csv', 'r') as csv_age, open('patientAge.csv', 'w') as csv_out:
+            i = 0
             for rowcsv in csv.reader(csv_in):
-                hadm_id_in= rowcsv[0]
+                hadm_id_in = str(rowcsv[0])
+                #print('In: ' + hadm_id_in)
                 for rows_adm in records_adm:
-                    hadm_id = records_adm[0]
-                    if (hadm_id_in == rows_adm):
-                        subject_id = records_adm[1]
+                    hadm_id_adm = str(rows_adm[0])
+
+                    if (hadm_id_in == hadm_id_adm):
+                    #     print("Comparing shit")
+                    #     print(hadm_id_in)
+                    #     print(hadm_id_adm)
+                    #     print("Printing row in IF statement")
+                    #     print(rows_adm)
+                        print('Hadm_id_Adm: ' + hadm_id_adm)
+                        subject_id_adm = str(rows_adm[1])
+
+                        print('Subject_id_adm: ' + subject_id_adm)
                         for rows_age in csv_age:
-                            subjec_id_age = rows_age[1]
-                            if (subject_id == subjec_id_age):
-                                pat_age = rows_age[0]
+                            print("rows_age: " + rows_age)
+                            #TODO split when comma subject_id_age and pat_age
+                            subject_id_age = str(rows_age.split(',')[0])
+                            print("subject_id_age: " + rows_age.split(',')[0])
+                            if (subject_id_adm == subject_id_age):
+                                print('Id_Age: ' + subject_id_age)
+                                pat_age = str(rows_age.split(',')[1])
+                                print(rows_age.split(',')[1])
+                                print(pat_age)
                                 rowcsv[3] = pat_age
+                            print('hi')
                 csv.writer(csv_out).writerow(rowcsv)
+                i = i + 1
+                #print(i)
+
+
+        # query = "SELECT p.subject_id, p.dob, p.gender, MIN(a.admittime) AS first_admittime, \
+        #         MIN(ROUND((cast(admittime as date) - cast(dob as date)) / 365.242, 2) ) AS first_admit_age \
+        #         FROM mimiciiidev.patients p INNER JOIN mimiciiidev.admissions a ON p.subject_id = a.subject_id \
+        #         GROUP BY p.subject_id, p.dob, p.gender ORDER BY p.subject_id;"
+        # cur.execute(query)
+        # records_pat_age = cur.fetchall()
+        #
+        # query1 = "SELECT hadm_id, subject_id FROM mimiciiidev.admissions "
+        # cur.execute(query1)
+        # records_adm = cur.fetchall()
+        #
+        # with open('admissionsLEFTJOINpatients.csv', 'r') as csv_in, open('patientAge.csv', 'w') as csv_out:
+        #     for rowcsv in csv.reader(csv_in):
+        #         hadm_id_in = rowcsv[0]
+        #         for rows_adm in records_adm:
+        #             hadm_id = records_adm[0]
+        #             subject_id_adm = NULL
+        #             if (hadm_id_in == hadm_id):
+        #                 subject_id_adm = records_adm[1]
+        #             for rows_age in records_pat_age:
+        #                 subject_id_pat = rows_age[0]
+        #                 if (subject_id_adm == subject_id_pat):
+        #                     pat_age = rows_age[4]
+        #                     rowcsv[3] = pat_age
+        #                     print(pat_age)
+        #                     return
+        #         csv.writer(csv_out).writerow(rowcsv)
 
     except (Exception, psycopg2.Error) as error:
         print ("Error while fetching data from PostgreSQL", error)
@@ -150,7 +204,8 @@ def add_class_labels_diagnoses(cur):
                     if (hadm_id_adm == hadm_id_diag):
                         #print(str(row[1]))
                         if (str(row[1]) == 'E9308' or str(row[1]) == 'E9300' or
-                                str(row[1]) == 'E9320' or str(row[1]) == 'E9331' or str(row[1]) == 'E9352'):
+                                str(row[1]) == 'E9320' or str(row[1]) == 'E9331' or str(row[1]) == 'E9305'
+                                or str(row[1]) == 'E9342'or str(row[1]) == 'E9305'):
                             #print('Records diagnosis: ' + str(records_diag_icd[1]))
                             rowcsv[22] = '1'
                 csv.writer(csv_out).writerow(rowcsv)
@@ -166,38 +221,12 @@ def map_add_labEvents_LOINC(cur):
                      'LG78-8': '27', 'LG80-4': '28', 'LG85-3': '29', 'LG88-7': '30', 'LG89-5': '31', 'LG90-3': '32',
                      'LG92-9': '33', 'LG96-0': '34', 'LG97-8': '35', 'LG99-4': '36'}
     try:
-        # # JOIN labevents & d_labitems ON itemid:
-        # query_JOIN_labEvents_labItems = "SELECT  labevents.hadm_id, d_labitems.loinc_code FROM mimiciiidev.labevents LEFT JOIN mimiciiidev.d_labitems ON labevents.itemid = d_labitems.itemid;"
-        # cur.execute(query_JOIN_labEvents_labItems)
-        # records_loinc_codes = cur.fetchall()
-        # # Join group_loinc_terms and group_loinc on groupId:
-        # query_select_groupIds_loinc = "SELECT group_loinc.parentGroupId, group_loinc_terms.loincNumber FROM mimiciiidev.group_loinc_terms JOIN mimiciiidev.group_loinc ON group_loinc_terms.groupId = group_loinc.groupId;"
-        # cur.execute(query_select_groupIds_loinc)
-        # records_groupIds = cur.fetchall()
         query = "SELECT  labevents.hadm_id, group_loinc.parentGroupId  \
                     FROM mimiciiidev.labevents INNER JOIN mimiciiidev.d_labitems ON labevents.itemid = d_labitems.itemid \
                     INNER JOIN mimiciiidev.group_loinc_terms ON group_loinc_terms.loincnumber = d_labitems.loinc_code \
                     INNER JOIN mimiciiidev.group_loinc ON group_loinc.groupId =  group_loinc_terms.groupId;"
         cur.execute(query)
         records = cur.fetchall()
-
-        # with open('classLabelsDiagnoses.csv', 'r') as csv_in, open('labEvents.csv', 'w') as csv_out:
-        #     for rowcsv in csv.reader(csv_in):
-        #         # Add rows!!! --> Should be done in first function append_rows() later on!!!
-        #         # 37 LOINC parent groups
-        #         for x in range(37):
-        #             rowcsv.insert(23 + x, '0')
-        #         csv.writer(csv_out).writerow(rowcsv)
-        #         hadm_id = str(rowcsv[0])
-        #         for rowlabEv in records_loinc_codes:
-        #             hadm_id_labEv = str(rowlabEv[0])
-        #             if (hadm_id == hadm_id_labEv):
-        #                 loinc_labEv = str(rowlabEv[1])
-        #                 for rowGroup in records_groupIds:
-        #                     loinc = str(rowGroup[1])
-        #                     if (loinc_labEv == loinc):
-        #                         rowcsv[23 + int(dict_icd9_cat[str(rowGroup[0])])] = '1'
-        #         csv.writer(csv_out).writerow(rowcsv)
         with open('classLabelsDiagnoses.csv', 'r') as csv_in, open('labEvents.csv', 'w') as csv_out:
             i = 0
             for rowcsv in csv.reader(csv_in):
@@ -205,8 +234,6 @@ def map_add_labEvents_LOINC(cur):
                 # 37 LOINC parent groups
                 for x in range(37):
                     rowcsv.insert(23 + x, '0')
-                csv.writer(csv_out).writerow(rowcsv)
-
                 hadm_id = str(rowcsv[0])
                 for rowlabEv in records:
                     hadm_id_labEv = str(rowlabEv[0])
@@ -264,8 +291,8 @@ def main():
     #add_class_labels_diagnoses(cursor)
     # Group labevents LOINC codes into parent groups
     # and add group if event within group occured during an admission:
-    #calc_age(cursor)
-    map_add_labEvents_LOINC(cursor)
+    calc_age(cursor)
+    #map_add_labEvents_LOINC(cursor)
     #mapping_prescriptions_ATC(cursor)
 
     ## Close database connection:

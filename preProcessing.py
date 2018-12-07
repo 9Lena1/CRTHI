@@ -1,6 +1,7 @@
 import csv
 
 import psycopg2
+from psycopg2.sql import NULL
 
 
 def write_csv_adm_JOIN_pat(cur):
@@ -13,9 +14,49 @@ def write_csv_adm_JOIN_pat(cur):
         a.writerows(records)
 
 #TODO
-def calc_age(row):
+def pre_calc_age(cur):
+    query1 = "SELECT hadm_id, subject_id, admittime FROM mimiciiidev.admissions "
+    cur.execute(query1)
+    records_adm = cur.fetchall()
+    query2 = "SELECT DISTINCT subject_id, dob FROM mimiciiidev.patients"
+    cur.execute(query2)
+    records_pat = cur.fetchall()
+    #Create csv file with patient ids and age
+    with open('age.csv', 'w') as csv_pat_age:
+        for row_pat in records_pat:
+            subject_id_pat = str(row_pat[0])
+            #print(subject_id_pat)
+            dob = row_pat[1]
+            first_admission = NULL
+            for row_adm in records_adm:
+                subject_id_adm = str(row_adm[1])
+                if (subject_id_pat == subject_id_adm):
+                    adm_time = row_adm[2]
+                    if (first_admission == NULL):
+                        first_admission = adm_time
+                    elif (adm_time < first_admission):
+                        first_admission = adm_time
+                    #print(adm_time)
+            #print(first_admission)
+            age_diff = (first_admission - dob)
+            age = int(age_diff.days/356)
+            csv.writer(csv_pat_age).writerow((subject_id_pat, age))
+    return records_adm
+
+
+def calc_age(rowcsv, records_adm):
     # Age = dob - day of first admission
-    x=1
+    with open('age.csv', 'r') as csv_age:
+        hadm_id_in = rowcsv[0]
+        for rows_adm in records_adm:
+            hadm_id = records_adm[0]
+            if (hadm_id_in == hadm_id):
+                subject_id = rows_adm[1]
+                for rows_age in csv_age:
+                    subjec_id_age = rows_age[1]
+                    if (subject_id == subjec_id_age):
+                        pat_age = rows_age[0]
+                        rowcsv[3] = pat_age
 
 
 def append_cols(row):
@@ -89,7 +130,8 @@ def add_class_labels_diagnoses(records_diag_icd, rowcsv):
         if (hadm_id_adm == hadm_id_diag):
             #print(str(row[1]))
             if (str(row[1]) == 'E9308' or str(row[1]) == 'E9300' or
-                    str(row[1]) == 'E9320' or str(row[1]) == 'E9331' or str(row[1]) == 'E9352'):
+                    str(row[1]) == 'E9320' or str(row[1]) == 'E9331' or str(row[1]) == 'E9305'
+                    or str(row[1]) == 'E9342' or str(row[1]) == 'E9305'):
                 #print('Records diagnosis: ' + str(records_diag_icd[1]))
                 rowcsv[22] = '1'
 
@@ -162,6 +204,8 @@ def main():
         ### Pre steps; Querying, dictionaries
         write_csv_adm_JOIN_pat(cursor)
 
+        records_adm = pre_calc_age(cursor)
+
         records_prcd_icd = pre_map_add_procedures_icd(cursor)[0]
         dict_icd9_cat = pre_map_add_procedures_icd(cursor)[1]
 
@@ -175,7 +219,7 @@ def main():
             i = 0
             for row in csv.reader(csv_in):
                 # Set the age (in field of dob)
-                #calc_age(cursor)
+                calc_age(row, records_adm)
                 # Append .csv file with rows (filled with 0) for procedure categories:
                 append_cols(row)
                 # Group procedure icd9 codes into categories
