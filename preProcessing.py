@@ -123,9 +123,9 @@ def add_class_labels_diagnoses(records_diag_icd, rowcsv):
         hadm_id_diag = str(row[0])
         if (hadm_id_adm == hadm_id_diag):
             #print(str(row[1]))
-            if (str(row[1]) == 'E9308' or str(row[1]) == 'E9300' or
-                    str(row[1]) == 'E9320' or str(row[1]) == 'E9331' or str(row[1]) == 'E9305'
-                    or str(row[1]) == 'E9342' or str(row[1]) == 'E9305'):
+            if (str(row[1]) == '9308' or str(row[1]) == '9300' or
+                    str(row[1]) == '9320' or str(row[1]) == '9331' or str(row[1]) == '9305'
+                    or str(row[1]) == '9342' or str(row[1]) == '9305'):
                 #print('Records diagnosis: ' + str(records_diag_icd[1]))
                 rowcsv[22] = '1'
 
@@ -196,6 +196,7 @@ def map_prescriptions_ATC(rowcsv, dict_atc2_cat):
                     # Step 2: Alter ICD9 Code to Category (0-16)
                     atc2_cat = str(dict_atc2_cat[atc2_key])
                     rowcsv[60 + int(atc2_cat)] = '1'
+
 
 
 def main():
