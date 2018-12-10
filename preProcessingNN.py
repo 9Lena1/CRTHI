@@ -64,9 +64,42 @@ def append_cols(row):
     # 37 LOINC parent groups
     # 93 medication groups
     for x in range(149):
-        # TODO Change index to 8 (+4 rows; binary)
-        row.insert(4 + x, '0')
+        ## TODO Change index to 8 (+4 rows; binary) ##
+        row.insert(8 + x, '0')
 
+# TODO Binarization
+def binarisation(rowcsv):
+    admission_type = str(rowcsv[1])
+    gender = str(rowcsv[2])
+    age = str(rowcsv[3])
+    if (admission_type == 'URGENT'):
+        rowcsv[1] = '1'
+        rowcsv[2] = '0'
+        rowcsv[3] = '0'
+        rowcsv[4] = '0'
+    elif (admission_type == 'NEWBORN'):
+        rowcsv[1] = '0'
+        rowcsv[2] = '1'
+        rowcsv[3] = '0'
+        rowcsv[4] = '0'
+    elif (admission_type == 'ELECTIVE'):
+        rowcsv[1] = '0'
+        rowcsv[2] = '0'
+        rowcsv[3] = '1'
+        rowcsv[4] = '0'
+    elif (admission_type == 'EMERGENCY'):
+        rowcsv[1] = '0'
+        rowcsv[2] = '0'
+        rowcsv[3] = '0'
+        rowcsv[4] = '1'
+
+    if (gender == 'male'):
+        rowcsv[5] = '1'
+        rowcsv[6] = '0'
+    elif (gender == 'female'):
+        rowcsv[5] = '0'
+        rowcsv[6] = '1'
+    rowcsv[7] = age
 
 def pre_map_add_procedures_icd(cur):
     # insert_pro_categories
@@ -114,14 +147,14 @@ def map_add_procedures_icd(records_prcd_icd, dict_icd9_cat, rowcsv):
         icd9_val_cat = dict_icd9_cat[icd9_key]
         if hadm_id_adm == hadm_id_pro:
             if (icd9_val_cat == '0' or icd9_val_cat == '1' or icd9_val_cat == '2' or icd9_val_cat == '3'):
-                # TODO Change index --> 8
-                rowcsv[4 + int(icd9_val_cat)] = '1'
+                ## TODO Change index --> 8 ##
+                rowcsv[8 + int(icd9_val_cat)] = '1'
             elif (icd9_val_cat == '3A'):
-                # TODO Change index --> 12
-                rowcsv[8] = '1'
+                ## TODO Change index --> 12 ##
+                rowcsv[12] = '1'
             else:
-                # TODO Change index --> 9
-                rowcsv[5 + int(icd9_val_cat)] = '1'
+                ## TODO Change index --> 9 ##
+                rowcsv[9 + int(icd9_val_cat)] = '1'
 
 
 def pre_add_class_labels_diagnoses(cur):
@@ -140,8 +173,8 @@ def add_class_labels_diagnoses(records_diag_icd, rowcsv):
         if (hadm_id_adm == hadm_id_diag):
             # print(row[0])
             # print('Records diagnosis: ' + str(records_diag_icd[1]))
-            # TODO Change index --> 26
-            rowcsv[22] = '1'
+            ## TODO Change index --> 26 ##
+            rowcsv[26] = '1'
 
 
 def pre_map_add_labEvents_LOINC(cur):
@@ -169,8 +202,8 @@ def map_add_labEvents_LOINC(records, dict_icd9_cat, rowcsv):
         hadm_id_labEv = str(rowlabEv[0])
         if (hadm_id == hadm_id_labEv):
             parent_group = str(rowlabEv[1])
-            # TODO Change index --> 27
-            rowcsv[23 + int(dict_icd9_cat[parent_group])] = '1'
+            ## TODO Change index --> 27 ##
+            rowcsv[27 + int(dict_icd9_cat[parent_group])] = '1'
 
 
 def pre_map_prescriptions_ATC(cur):
@@ -210,8 +243,8 @@ def map_prescriptions_ATC(rowcsv, dict_atc2_cat):
                 atc2_key = str(row[1][0:3])
                 # Step 2: Map to atc group dictionary
                 atc2_cat = str(dict_atc2_cat[atc2_key])
-                # TODO Change: Change index --> 64
-                rowcsv[60 + int(atc2_cat)] = '1'
+                ## TODO Change: Change index --> 64 ##
+                rowcsv[64 + int(atc2_cat)] = '1'
 
 
 def main():
@@ -246,12 +279,15 @@ def main():
 
         dict_atc2_cat = pre_map_prescriptions_ATC(cursor)
 
-        with open('admissionsLEFTJOINpatients.csv', 'r') as csv_in, open('preProcessed.csv', 'w',
+        with open('admissionsLEFTJOINpatients.csv', 'r') as csv_in, open('preProcessedNN.csv', 'w',
                                                                          newline='') as csv_out:
             i = 0
             for row in csv.reader(csv_in):
                 # Append .csv file with rows (filled with 0) for procedure categories:
                 append_cols(row)
+                ## TODO Binarization ##
+                # Binarise admission_type and gender for NN
+                binarisation(row)
                 # Group procedure icd9 codes into categories
                 # and add category (alter 0 to 1) if procedure within category has been done during an admission:
                 map_add_procedures_icd(records_prcd_icd, dict_icd9_cat, row)
