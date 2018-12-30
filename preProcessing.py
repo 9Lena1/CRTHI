@@ -4,33 +4,40 @@ import psycopg2
 
 
 def select_hamd_id():
-    with open('hamd_ndc_atc3.csv', 'r') as csvfile:
+    with open('hamd_ndc_atc3.csv', 'r') as csvfile, open('selected_hamd.csv', 'w', newline='') as csvoutput:
         csv_reader = csv.reader(csvfile, delimiter=',')
+        #create array to avoid repeating hadm_id
         array_selected_hadm_id = []
         for row in csv_reader:
             if (row[5] != 'NA'):
-                # Step 1: extract first 3 chars of the ATC4 code
+                # extract first 3 chars of the ATC4 code to get the ATC2
                 atc2_key = str(row[5][0:3])
+                #check whether the atc code is of one of the controls
                 if (atc2_key == 'B01'
                         or atc2_key == 'L01'
                         or atc2_key == 'L04'
                         or atc2_key == 'H02'
                         or atc2_key == 'J01'):
-                    hadm_id = row[1]
-                    # print (hadm_id)
+                    hadm_id = str(row[1])
+                    #print (hadm_id)
+                    #if the atc code is of control, add it to array
                     if (hadm_id not in array_selected_hadm_id):
+                        csv.writer(csvoutput).writerow([hadm_id])
                         array_selected_hadm_id.append(str(hadm_id))
     return array_selected_hadm_id
 
 
 def write_hadmid_admissiontype_gender_calc_age(cur, array_selected_hadm_id):
-    # query all admission, type, gender, dob and admissiontime
+    # query all admission, type, gender, dob, first admissiontime, discharge time and admissiontime
     cur.execute(
-        "SELECT  a.hadm_id, a.admission_type, p.gender, p.dob, MIN (a.admittime) OVER (PARTITION BY p.subject_id) AS first_admittime  FROM mimiciiidev.admissions a INNER JOIN mimiciiidev.patients p ON p.subject_id = a.subject_id ORDER BY a.hadm_id;")
+        "SELECT  a.hadm_id, a.admission_type, p.gender, p.dob, MIN (a.admittime) OVER (PARTITION BY p.subject_id) AS first_admittime, a.dischtime, a.admittime  FROM mimiciiidev.admissions a INNER JOIN mimiciiidev.patients p ON p.subject_id = a.subject_id ORDER BY a.hadm_id;")
     records_adm = cur.fetchall()
     # write file with admission Id, type, gender and age
-    with open('admissionsLEFTJOINpatients.csv', 'w', newline='') as csvfile:
+    with open('hadmid_admissiontype_gender_calc_age.csv', 'w', newline='') as csvfile:
         filewriter = csv.writer(csvfile)
+        #create dictionary to save row number of every hadm_id
+        dict_selected_hadm_id = {}
+        i = 0
         for row in records_adm:
             # only write rows with selected admission IDs
             if str(row[0]) in array_selected_hadm_id:
@@ -40,32 +47,29 @@ def write_hadmid_admissiontype_gender_calc_age(cur, array_selected_hadm_id):
                 age_diff = (first_admission - dob)
                 age = int(round(age_diff.days / 365.242, 2))
                 # set all 90+ ages to 90
-                if (age == 300):
+                if age == 300:
                     age = 90
-                # TODO Change: include all admission types (+3) and male/female (+1 row)
-                filewriter.writerow([row[0], row[1], row[2], age])
-
-
-def shorten_atc_file(array_selected_hadm_id):
-    with open('hamd_ndc_atc3.csv', 'r') as csvfile, open('hamd_atc_new.csv', 'w', newline='') as csvout:
-        csv_reader = csv.reader(csvfile, delimiter=',')
-        filewriter = csv.writer(csvout)
-        # remove rows from atc file that are not selected admission IDs
-        for row in csv_reader:
-            # print(i)
-            # skip non-defined atc codes
-            if str(row[5]) != 'NA':
-                if (str(row[1]) in array_selected_hadm_id):
-                    filewriter.writerow([row[1], row[5]])
+                dischtime = row[5]
+                admittime = row[6]
+                #calculate length of hospital stay in days
+                hospital_stay = (dischtime - admittime)
+                hospital_stay = hospital_stay.days
+                #add hadm_id and row number to dictionary
+                dict_selected_hadm_id.update([(str(row[0]), int(i))])
+                i = i+1
+                filewriter.writerow([row[0], row[1], row[2], age, hospital_stay])
+    return dict_selected_hadm_id
 
 
 def append_cols(row):
     # 18 Procedures, 1 class label
-    # 37 LOINC parent groups
-    # 93 medication groups
-    for x in range(149):
-        # TODO Change index to 8 (+4 rows; binary)
-        row.insert(4 + x, '0')
+    # 8 LOINC parent groups
+    # 2 Loinc groups
+    # 94 medication groups
+    # 1 kidney failure
+    for x in range(124):
+        # 5 rows from previous query
+        row.insert(5 + x, '0')
 
 
 def pre_map_add_procedures_icd(cur):
@@ -96,32 +100,7 @@ def pre_map_add_procedures_icd(cur):
     query_selectAll_procedureicds = "SELECT hadm_id, icd9_code FROM mimiciiidev.procedures_icd;"
     cur.execute(query_selectAll_procedureicds)
     records_prcd_icd = cur.fetchall()
-    # only keep rows from selected admission IDs
-    # for row in records_prcd_icd:
-    #   if str(row[0]) not in array_selected_hadm_id:
-    #       print ("deleted" + str(row[0]) )
-    #      del row
     return records_prcd_icd, dict_icd9_cat
-
-
-def map_add_procedures_icd(records_prcd_icd, dict_icd9_cat, rowcsv):
-    hadm_id_adm = str(rowcsv[0])
-    for row in records_prcd_icd:
-        hadm_id_pro = str(row[0])
-        # Step 1: Extract first two chars of ICD9 Code (01-99)
-        icd9_key = row[1][0:2]
-        # Step 2: Alter ICD9 Code to Category (0-16)
-        icd9_val_cat = dict_icd9_cat[icd9_key]
-        if hadm_id_adm == hadm_id_pro:
-            if (icd9_val_cat == '0' or icd9_val_cat == '1' or icd9_val_cat == '2' or icd9_val_cat == '3'):
-                # TODO Change index --> 8
-                rowcsv[4 + int(icd9_val_cat)] = '1'
-            elif (icd9_val_cat == '3A'):
-                # TODO Change index --> 12
-                rowcsv[8] = '1'
-            else:
-                # TODO Change index --> 9
-                rowcsv[5 + int(icd9_val_cat)] = '1'
 
 
 def pre_add_class_labels_diagnoses(cur):
@@ -132,46 +111,33 @@ def pre_add_class_labels_diagnoses(cur):
     return records_diag_icd
 
 
-def add_class_labels_diagnoses(records_diag_icd, rowcsv):
-    hadm_id_adm = str(rowcsv[0])
-    # print(hadm_id_adm)
-    for row in records_diag_icd:
-        hadm_id_diag = str(row[0])
-        if (hadm_id_adm == hadm_id_diag):
-            # print(row[0])
-            # print('Records diagnosis: ' + str(records_diag_icd[1]))
-            # TODO Change index --> 26
-            rowcsv[22] = '1'
-
-
 def pre_map_add_labEvents_LOINC(cur):
-    dict_LOINC_cat = {'LG100-4': '0', 'LG103-8': '1', 'LG105-3': '2', 'LG106-1': '3', 'LG27-5': '4', 'LG41751-5': '5',
-                      'LG41762-2': '6', 'LG41808-3': '7', 'LG41809-1': '8', 'LG41811-7': '9', 'LG41812-5': '10',
-                      'LG41813-3': '11', 'LG41814-1': '12', 'LG41816-6': '13', 'LG41817-4': '14', 'LG41818-2': '15',
-                      'LG41820-8': '16', 'LG41821-6': '17', 'LG41822-4': '18', 'LG41855-4': '19', 'LG47-3': '20',
-                      'LG50067-4': '21', 'LG55-6': '22', 'LG66-3': '23', 'LG68-9': '24', 'LG70-5': '25', 'LG74-7': '26',
-                      'LG78-8': '27', 'LG80-4': '28', 'LG85-3': '29', 'LG88-7': '30', 'LG89-5': '31', 'LG90-3': '32',
-                      'LG92-9': '33', 'LG96-0': '34', 'LG97-8': '35', 'LG99-4': '36'}
+    dict_LOINC_cat = {'LG100-4': '0', 'LG103-8': '1',  'LG27-5' : '2', 'LG55-6': '3', 'LG74-7': '4',
+                      'LG78-8': '5', 'LG80-4': '6', 'LG97-8': '7', }
 
+    #query all parent group id for hadm where the result of the labevents was flagged as abnormal
     query = "SELECT  labevents.hadm_id, group_loinc.parentGroupId  \
                 FROM mimiciiidev.labevents INNER JOIN mimiciiidev.d_labitems ON labevents.itemid = d_labitems.itemid \
                 INNER JOIN mimiciiidev.group_loinc_terms ON group_loinc_terms.loincnumber = d_labitems.loinc_code \
-                INNER JOIN mimiciiidev.group_loinc ON group_loinc.groupId =  group_loinc_terms.groupId;"
+                INNER JOIN mimiciiidev.group_loinc ON group_loinc.groupId =  group_loinc_terms.groupId WHERE labevents.flag = 'abnormal';"
     cur.execute(query)
     records = cur.fetchall()
 
     return records, dict_LOINC_cat
 
+def map_alb_and_platelets (cur):
+    query = "SELECT  labevents.hadm_id, group_loinc_terms.GroupId  \
+                FROM mimiciiidev.labevents INNER JOIN mimiciiidev.d_labitems ON labevents.itemid = d_labitems.itemid \
+                INNER JOIN mimiciiidev.group_loinc_terms ON group_loinc_terms.loincnumber = d_labitems.loinc_code \
+                WHERE labevents.flag = 'abnormal' AND group_loinc_terms.GroupId = 'LG5465-2' OR group_loinc_terms.GroupId = 'LG49829-1' OR group_loinc_terms.GroupId = 'LG32892-8'; "
+    cur.execute(query)
+    records = cur.fetchall()
 
-def map_add_labEvents_LOINC(records, dict_icd9_cat, rowcsv):
-    hadm_id = str(rowcsv[0])
-    for rowlabEv in records:
-        hadm_id_labEv = str(rowlabEv[0])
-        if (hadm_id == hadm_id_labEv):
-            parent_group = str(rowlabEv[1])
-            # TODO Change index --> 27
-            rowcsv[23 + int(dict_icd9_cat[parent_group])] = '1'
+    dict_LOINC_group= { 'LG5465-2': '0', 'LG49829-1': '0',
+                       'LG32892-8': '1'
+                       }
 
+    return records, dict_LOINC_group
 
 def pre_map_prescriptions_ATC(cur):
     dict_atc2_cat = {'A01': '0', 'A02': '1', 'A03': '2', 'A04': '3', 'A05': '4', 'A06': '5', 'A07': '6', 'A08': '7',
@@ -196,22 +162,13 @@ def pre_map_prescriptions_ATC(cur):
                      }
     return dict_atc2_cat
 
+def diagnosis_kidney_failure(cur):
+    query = " SELECT hadm_id, icd9_code FROM mimiciiidev.diagnoses_icd WHERE icd9_code LIKE '58%';"
+    cur.execute(query)
+    kidney_failure_records = cur.fetchall()
+    return kidney_failure_records
 
-def map_prescriptions_ATC(rowcsv, dict_atc2_cat):
-    hadm_id_adm = str(rowcsv[0])
-    # open csv file with hamdid codes and matching atc4 codes
-    with open('hamd_atc_new.csv', 'r') as csvfile:
-        csv_reader = csv.reader(csvfile, delimiter=',')
-        for row in csv_reader:
-            hadm_id_med = str(row[0])
-            # check if admission IDs match
-            if (hadm_id_adm == hadm_id_med):
-                # Step 1: Extract first 3 chars of atc code
-                atc2_key = str(row[1][0:3])
-                # Step 2: Map to atc group dictionary
-                atc2_cat = str(dict_atc2_cat[atc2_key])
-                # TODO Change: Change index --> 64
-                rowcsv[60 + int(atc2_cat)] = '1'
+
 
 
 def main():
@@ -231,10 +188,20 @@ def main():
 
     try:
         ## Pre steps; Querying, dictionaries
-        ##TODO Comment in when run for first time!!!
+        #TODO: only has to be run once to create csv file with array
         array_selected_hadm_id = select_hamd_id()
-        write_hadmid_admissiontype_gender_calc_age(cursor, array_selected_hadm_id)
-        shorten_atc_file(array_selected_hadm_id)
+
+        #TODO: run this if you need to rerun but already have the csv file with array hadm id
+        #array_selected_hadm_id = []
+        #with open('selected_hamd.csv', 'r') as  csvfile:
+         #   csv_reader = csv.reader(csvfile, delimiter=',')
+          #  for row in csv_reader:
+           #     array_selected_hadm_id.append(str(row[0]))
+
+        # Write hadmid_admissiontype_gender_calc_age.csv for selected hadm_id
+        # Dict of adm_id and row number in records_adm
+        dict_selected_hadm_id = write_hadmid_admissiontype_gender_calc_age(cursor, array_selected_hadm_id)
+
 
         records_diag_icd = pre_add_class_labels_diagnoses(cursor)
 
@@ -246,26 +213,89 @@ def main():
 
         dict_atc2_cat = pre_map_prescriptions_ATC(cursor)
 
-        with open('admissionsLEFTJOINpatients.csv', 'r') as csv_in, open('preProcessed.csv', 'w',
-                                                                         newline='') as csv_out:
+        records_loinc_alb_plat = map_alb_and_platelets(cursor)[0]
+        dict_loinc_groups = map_alb_and_platelets(cursor)[1]
+
+        kidney_failure_records = diagnosis_kidney_failure(cursor)
+
+        print("Pre-steps done")
+
+        with open('hadmid_admissiontype_gender_calc_age.csv', 'r') as csv_in, open('hadmid_admissiontype_gender_calc_age_appendedCols.csv', 'w', newline='') as csv_out:
             i = 0
             for row in csv.reader(csv_in):
-                # Append .csv file with rows (filled with 0) for procedure categories:
+                # Append .csv file containing only entries with chosen hadm_ids with rows:
                 append_cols(row)
-                # Group procedure icd9 codes into categories
-                # and add category (alter 0 to 1) if procedure within category has been done during an admission:
-                map_add_procedures_icd(records_prcd_icd, dict_icd9_cat, row)
-                # Add class labels (0: no ADE, 1: one or more ADE(s) during admission):
-                add_class_labels_diagnoses(records_diag_icd, row)
-                # Group labevents LOINC codes into parent groups
-                # and add group if event within group occured during an admission:
-                map_add_labEvents_LOINC(records_loinc_groups, dict_icd9_cat_2, row)
-                # Group Medication in Prescriptions to ATC
-                map_prescriptions_ATC(row, dict_atc2_cat)
-                # Write rows
                 csv.writer(csv_out).writerow(row)
-                i = i + 1
-                print(i)
+            print("Append cols done")
+
+        #add lab events to table
+        with open('hadmid_admissiontype_gender_calc_age_appendedCols.csv', 'r') as csv_in, open('2018_12_28_preprocessing.csv', 'w', newline='') as csv_out:
+            csv_reader = csv.reader(csv_in, delimiter=',')
+            lines = list(csv_reader)
+
+             # Go through query for class labels
+            for row in records_diag_icd:
+                #check if hadm id is in array of selected hadm ids
+                if str(row[0]) in array_selected_hadm_id:
+                    # make corresponding row, column positive
+                    lines[dict_selected_hadm_id[str(row[0])]][23] = '1'
+            print("Add class labels done")
+
+            for row in records_loinc_alb_plat:
+                if str(row[0]) in array_selected_hadm_id:
+                    # make corresponding row, column positive
+                    lines[dict_selected_hadm_id[str(row[0])]][127+int(dict_loinc_groups[str(row[1])])] = int(lines[dict_selected_hadm_id[str(row[0])]][127+int(dict_loinc_groups[str(row[1])])]) +1
+            print("Map alb and platelets done")
+
+            #go through lab events query
+            for row in records_loinc_groups:
+                # check if hadm id is in array of selected hadm ids
+                if str(row[0]) in array_selected_hadm_id:
+                    parent_group = str(row[1])
+                    lines[dict_selected_hadm_id[str(row[0])]][24 + int(dict_icd9_cat_2[parent_group])] = int(lines[dict_selected_hadm_id[str(row[0])]][24 + int(dict_icd9_cat_2[parent_group])]) +1
+            print("Map labevents done")
+
+        # Add procedures, medications, kidney failure
+
+            #Go through query for procedures
+            for row in records_prcd_icd:
+                # Extract first two chars of ICD9 Code (01-99)
+                icd9_key = row[1][0:2]
+                # Alter ICD9 Code to Category (0-16)
+                icd9_val_cat = dict_icd9_cat[str(icd9_key)]
+                # Check if hadm id is in array of selected hadm ids
+                if str(row[0]) in array_selected_hadm_id:
+                    # Add one to corresponding row, column
+                    if icd9_val_cat == '0' or icd9_val_cat == '1' or icd9_val_cat == '2' or icd9_val_cat == '3':
+                        lines[dict_selected_hadm_id[str(row[0])]][5 + int(icd9_val_cat)] = int(lines[dict_selected_hadm_id[str(row[0])]][5 + int(icd9_val_cat)]) + 1
+                    elif icd9_val_cat == '3A':
+                        lines[dict_selected_hadm_id[str(row[0])]][9] = int(lines[dict_selected_hadm_id[str(row[0])]][9]) +1
+                    else:
+                        lines[dict_selected_hadm_id[str(row[0])]][6 + int(icd9_val_cat)] = int(lines[dict_selected_hadm_id[str(row[0])]][6 + int(icd9_val_cat)]) + 1
+            print("Map procedures done")
+
+            with open('hamd_ndc_atc3.csv', 'r', newline = '') as csv_atc:
+                csv_atc_reader = csv.reader(csv_atc, delimiter=',')
+                for row in csv_atc_reader:
+                    if str(row[5]) != 'NA':
+                        if str(row[1]) in array_selected_hadm_id:
+                    #Step 1: select first three chars for atc2 code
+                            atc2_key = str(row[5][0:3])
+                    # Step 2: Map to atc group dictionary
+                            atc2_cat = str(dict_atc2_cat[atc2_key])
+                    # add one to corresponding row, column
+                            lines[dict_selected_hadm_id[str(row[1])]][32 + int(atc2_cat)] = int(lines[dict_selected_hadm_id[row[1]]][32 + int(atc2_cat)]) + 1
+            print("Map medication done")
+
+            for row in kidney_failure_records:
+                #check if hadm id is in array of selected hadm ids
+                if str(row[0]) in array_selected_hadm_id:
+                    # make corresponding row, column positive
+                    lines[dict_selected_hadm_id[str(row[0])]][126] = '1'
+            print("Map kidney failure done")
+
+            filewriter = csv.writer(csv_out)
+            filewriter.writerows(lines)
 
     except (Exception, psycopg2.Error) as error:
         print("Error while fetching data from PostgreSQL", error)
