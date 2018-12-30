@@ -91,12 +91,23 @@ f <- as.formula(paste(paste(n[columnToPredict], collapse = " + "), paste(" ~"), 
    #               J01 + L01 + M01 + N01 + P01 + R01 + S01 + V01 + Renal + Alb)
 
 set.seed(seedNumber)
-control <- trainControl(method="cv", 
-                        number=10, 
-                        classProbs=TRUE, 
+control <- trainControl(method="cv",
+                        number=10,
+                        classProbs=TRUE,
                         summaryFunction = prSummary, #Compare using AUC, precision and recall.
                         savePredictions = TRUE)
-
+# 
+# folds <- 19
+# cvIndex <- createFolds(factor(training$Y), folds, returnTrain = T)
+# control <- trainControl(index = cvIndex,
+#                    method = 'cv', 
+#                    number = folds)
+# 
+# rfFit <- train(Y ~ ., data = training, 
+#                method = "rf", 
+#                trControl = control,
+#                maximize = TRUE,
+#                verbose = FALSE, ntree = 1000)
 
 
 ##################################
